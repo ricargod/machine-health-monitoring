@@ -19,31 +19,35 @@
 std::mutex m;
 
 void post_metric(const std::string& machine_id, const std::string& sensor_id, const std::string& timestamp_str, const int value) {
-//     int sock = socket(AF_INET, SOCK_STREAM, 0);
-//     if (sock == -1) {
-//         std::cerr << "Could not create socket" << std::endl;
-//         return;
-//     }
+    // std::string path = machine_id + '.' + sensor_id;
+    // std::string metric = path + " " + std::to_string(value) + " " + timestamp_str;
 
-//     sockaddr_in server;
-//     server.sin_addr.s_addr = inet_addr(GRAPHITE_HOST);
-//     server.sin_family = AF_INET;
-//     server.sin_port = htons(GRAPHITE_PORT);
+    // int sockfd;
+    // struct sockaddr_in serv_addr;
 
-//     if (connect(sock, (struct sockaddr*)&server, sizeof(server)) < 0) {
-//         std::cerr << "Connection error" << std::endl;
-//         return;
-//     }
+    // sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    // if (sockfd < 0) {
+    //     std::cerr << "Erro ao criar o socket" << std::endl;
+    //     return;
+    // }
 
-//     std::stringstream message;
-//     message << machine_id << "." << sensor_id << " " << value << " " << timestamp_str << "\n";
-//     std::string msg = message.str();
+    // serv_addr.sin_family = AF_INET;
+    // serv_addr.sin_port = htons(GRAPHITE_PORT);
+    // inet_pton(AF_INET, GRAPHITE_HOST, &(serv_addr.sin_addr));
 
-//     if (send(sock, msg.c_str(), msg.length(), 0) < 0) {
-//         std::cerr << "Send failed" << std::endl;
-//     }
+    // if (connect(sockfd, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0) {
+    //     std::cerr << "Erro ao conectar ao servidor Graphite" << std::endl;
+    //     close(sockfd);
+    //     return;
+    // }
+    // std::string string_teste = "test_no_codigo.teste 20 20";
 
-//     close(sock);
+    // if (send(sockfd, string_teste.c_str(), string_teste.length(), 0) < 0) {
+    //     std::cerr << "Erro ao enviar dados para o servidor Graphite" << std::endl;
+    // }
+
+    // close(sockfd);
+
 }
 
 std::vector<std::string> split(const std::string &str, char delim) {
