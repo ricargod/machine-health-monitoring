@@ -7,6 +7,9 @@
 #include <vector>
 #include "json.hpp" 
 #include "mqtt/client.h" 
+#include <iomanip>
+#include <sys/socket.h>
+#include <arpa/inet.h>
 
 #define QOS 1
 #define BROKER_ADDRESS "tcp://localhost:1883"
@@ -16,7 +19,31 @@
 std::mutex m;
 
 void post_metric(const std::string& machine_id, const std::string& sensor_id, const std::string& timestamp_str, const int value) {
+//     int sock = socket(AF_INET, SOCK_STREAM, 0);
+//     if (sock == -1) {
+//         std::cerr << "Could not create socket" << std::endl;
+//         return;
+//     }
 
+//     sockaddr_in server;
+//     server.sin_addr.s_addr = inet_addr(GRAPHITE_HOST);
+//     server.sin_family = AF_INET;
+//     server.sin_port = htons(GRAPHITE_PORT);
+
+//     if (connect(sock, (struct sockaddr*)&server, sizeof(server)) < 0) {
+//         std::cerr << "Connection error" << std::endl;
+//         return;
+//     }
+
+//     std::stringstream message;
+//     message << machine_id << "." << sensor_id << " " << value << " " << timestamp_str << "\n";
+//     std::string msg = message.str();
+
+//     if (send(sock, msg.c_str(), msg.length(), 0) < 0) {
+//         std::cerr << "Send failed" << std::endl;
+//     }
+
+//     close(sock);
 }
 
 std::vector<std::string> split(const std::string &str, char delim) {
@@ -35,6 +62,12 @@ mqtt::async_client client(BROKER_ADDRESS, clientId);
 //Guarda o valor do timestamp da ultima mensagem recebida de cada sensor
 //encadeado como: {id_do_sensor: ultimo_timestamp}
 std::map<std::string, std::string> actual_timestamps;
+
+struct SensorReadings {
+    std::vector<double> readings;
+};
+
+std::map<std::string, SensorReadings> sensorData;
 
 // void monitor_sensor_inactivity(std::string sensorId, int data_interval) {
 //     while(1) {
@@ -86,12 +119,46 @@ void monitor_sensor_inactivity(std::string sensorId, int data_interval) {
     }
 }
 
+double calculate_average(const std::string& sensor_id) {
+    double sum = 0.0;
+    int count = 0;
+
+    // Verifica se há leituras armazenadas para o sensor
+    if (sensorData.find(sensor_id) != sensorData.end()) {
+        auto& readings = sensorData[sensor_id].readings;
+
+        // Calcula a média das últimas 10 leituras, se houverem
+        int start_idx = readings.size() > 10 ? readings.size() - 10 : 0;
+        for (int i = start_idx; i < readings.size(); ++i) {
+            sum += readings[i];
+            count++;
+        }
+    }
+
+    return count > 0 ? sum / count : 0.0;
+}
+void add_reading(const std::string& sensor_id, double value) {
+    // Verifica se há leituras armazenadas para o sensor
+    if (sensorData.find(sensor_id) != sensorData.end()) {
+        auto& readings = sensorData[sensor_id].readings;
+
+        // Mantém apenas as últimas 10 leituras
+        if (readings.size() >= 10) {
+            readings.erase(readings.begin());
+        }
+
+        // Adiciona a nova leitura
+        readings.push_back(value);
+    } else {
+        // Se não houver leituras armazenadas, cria uma entrada para o sensor
+        SensorReadings sr;
+        sr.readings.push_back(value);
+        sensorData.insert({ sensor_id, sr });
+    }
+}
 
 
 int main(int argc, char* argv[]) {
-
-    
-
     // Create an MQTT callback.
     class callback : public virtual mqtt::callback {
     public:
@@ -148,6 +215,13 @@ int main(int argc, char* argv[]) {
            
 
             post_metric(machine_id, sensor_id, timestamp, value);
+            // Adicionar a nova leitura aos dados do sensor
+            add_reading(sensor_id, value);
+            double avg = calculate_average(sensor_id);
+            if (sensor_id=="sensor1" && avg > 5.0) {
+                std::cout << "A média das leituras para o sensor " << sensor_id << " é maior que 5!" << std::endl;
+                // ENVIAR ALARME
+            }
             }
         }
     };
