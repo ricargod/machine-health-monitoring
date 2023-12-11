@@ -37,7 +37,7 @@ double get_cpu_frequency() {
         }
         cpuinfoFile.close();
     }
-    return(frequency);
+    return(frequency/1000);
 }
 
 double get_cpu_usage() {

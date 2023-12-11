@@ -10,6 +10,7 @@
 #include <iomanip>
 #include <sys/socket.h>
 #include <arpa/inet.h>
+#include <boost/asio.hpp>
 
 #define QOS 1
 #define BROKER_ADDRESS "tcp://localhost:1883"
@@ -17,37 +18,48 @@
 #define GRAPHITE_PORT 2003
 
 std::mutex m;
+using namespace boost::asio;
+std::time_t convert_to_epoch(const std::string& timestamp_str) {
+    // Crie um objeto de tempo usando o timestamp fornecido
+    std::tm tm = {};
+    std::istringstream ss(timestamp_str);
+    ss >> std::get_time(&tm, "%Y-%m-%dT%H:%M:%SZ"); // Formato do timestamp
+    // Converta o objeto de tempo para Unix epoch
+    std::time_t epoch_time = std::mktime(&tm);
+    return epoch_time;
+}
+void post_metric(const std::string& machine_id, const std::string& sensor_id, const std::string& timestamp_str, double value) {
+    //std::string path = machine_id + '.' + sensor_id;
+    //std::string metric = path + " " + std::to_string(value) + " " + timestamp_str;
+    std::string metric = machine_id + '.' + sensor_id;
+    std::cout << "valor"<< value <<std::endl;
+    std::time_t epoch = convert_to_epoch(timestamp_str);
+    std::string message = metric + " " + std::to_string(value) + " " + std::to_string(epoch) + "\n";
+    io_context io;
+    // std::cout << "epoch"<< std::to_string(epoch) <<std::endl;
+    // std::cout << std::to_string(std::time(0)) <<std::endl;
+    // std::cout << timestamp_str <<std::endl;
+    // Crie um endpoint para o servidor de destino
+    ip::tcp::endpoint endpoint(ip::address::from_string("127.0.0.1"), 2003);
+    // Crie um socket
+    ip::tcp::socket socket(io);
 
-void post_metric(const std::string& machine_id, const std::string& sensor_id, const std::string& timestamp_str, const int value) {
-    // std::string path = machine_id + '.' + sensor_id;
-    // std::string metric = path + " " + std::to_string(value) + " " + timestamp_str;
+    try {
+        // Conecte-se ao servidor
+        socket.connect(endpoint);
+        // Enviar mensagem
+        
+        boost::system::error_code error;
 
-    // int sockfd;
-    // struct sockaddr_in serv_addr;
-
-    // sockfd = socket(AF_INET, SOCK_STREAM, 0);
-    // if (sockfd < 0) {
-    //     std::cerr << "Erro ao criar o socket" << std::endl;
-    //     return;
-    // }
-
-    // serv_addr.sin_family = AF_INET;
-    // serv_addr.sin_port = htons(GRAPHITE_PORT);
-    // inet_pton(AF_INET, GRAPHITE_HOST, &(serv_addr.sin_addr));
-
-    // if (connect(sockfd, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0) {
-    //     std::cerr << "Erro ao conectar ao servidor Graphite" << std::endl;
-    //     close(sockfd);
-    //     return;
-    // }
-    // std::string string_teste = "test_no_codigo.teste 20 20";
-
-    // if (send(sockfd, string_teste.c_str(), string_teste.length(), 0) < 0) {
-    //     std::cerr << "Erro ao enviar dados para o servidor Graphite" << std::endl;
-    // }
-
-    // close(sockfd);
-
+        write(socket, buffer(message), error);
+        if (error) {
+            std::cerr << "Erro ao enviar mensagem: " << error.message() << std::endl;
+        } else {
+            std::cout << "Mensagem enviada com sucesso!" << std::endl;
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "Erro ao conectar: " << e.what() << std::endl;
+    }
 }
 
 std::vector<std::string> split(const std::string &str, char delim) {
@@ -73,21 +85,7 @@ struct SensorReadings {
 
 std::map<std::string, SensorReadings> sensorData;
 
-// void monitor_sensor_inactivity(std::string sensorId, int data_interval) {
-//     while(1) {
-        
-//         std::cout << actual_timestamps[sensorId] << std::endl;
-//         auto timestamp_parts = split(actual_timestamps[sensorId], 'T');
-//         std::string time = timestamp_parts[1];
-//         auto time_parts = split(time, ':');
-//         std::cout << time_parts[2] << std::endl;
-       
-//         std::this_thread::sleep_for(std::chrono::seconds(1));
-        
-//     }
-    
-// }
-void monitor_sensor_inactivity(std::string sensorId, int data_interval) {
+void monitor_sensor_inactivity(std::string sensorId, int data_interval, std::string machineId) {
     bool data_received = true;
     int count = 0; // Contador de tempo sem dados
 
@@ -106,20 +104,18 @@ void monitor_sensor_inactivity(std::string sensorId, int data_interval) {
 
             if (count == 10) {
                 std::cout << "Não houve recebimento de dados do "<<sensorId << " por 10 intervalos!" << std::endl;
-                
+                post_metric(machineId, "alarm.alarm-type", current_timestamp, 1);
                 count = 0;
             }
         } else {
             data_received = true;
+            std::cout << "Dados do sensor " << sensorId << " estão sendo recebidos." << std::endl;
+            post_metric(machineId, "alarm.alarm-type", current_timestamp, 0);
             count = 0;
         }
-
         // Atualiza o último timestamp
         last_timestamp = current_timestamp;
-
-        if (data_received) {
-            std::cout << "Dados do sensor " << sensorId << " estão sendo recebidos." << std::endl;
-        }
+        
     }
 }
 
@@ -163,6 +159,7 @@ void add_reading(const std::string& sensor_id, double value) {
 
 
 int main(int argc, char* argv[]) {
+    
     // Create an MQTT callback.
     class callback : public virtual mqtt::callback {
     public:
@@ -196,9 +193,9 @@ int main(int argc, char* argv[]) {
                 actual_timestamps.insert_or_assign(new_sensor1_id, "0T00:00:00");
                 actual_timestamps.insert_or_assign(new_sensor2_id, "0");
 
-                std::thread m_i_1(monitor_sensor_inactivity, new_sensor1_id , new_sensor1_interval);
+                std::thread m_i_1(monitor_sensor_inactivity, new_sensor1_id , new_sensor1_interval, new_machine_id);
                 m_i_1.detach();
-                std::thread m_i_2(monitor_sensor_inactivity, new_sensor2_id, new_sensor2_interval);
+                std::thread m_i_2(monitor_sensor_inactivity, new_sensor2_id, new_sensor2_interval, new_machine_id);
                 m_i_2.detach();
             
 
