@@ -50,7 +50,7 @@ void post_metric(const std::string& machine_id, const std::string& sensor_id, co
         // Enviar mensagem
         
         boost::system::error_code error;
-
+        std::cout <<sensor_id<<"   " << timestamp_str <<std::endl;
         write(socket, buffer(message), error);
         if (error) {
             std::cerr << "Erro ao enviar mensagem: " << error.message() << std::endl;
@@ -92,6 +92,12 @@ void monitor_sensor_inactivity(std::string sensorId, int data_interval, std::str
     auto last_timestamp = actual_timestamps[key]; // Obtém o timestamp inicial
 
     while (true) {
+        auto now = std::chrono::system_clock::now();
+        std::time_t now_c = std::chrono::system_clock::to_time_t(now);
+        std::tm* now_tm = std::localtime(&now_c);
+        std::stringstream ss;
+        ss << std::put_time(now_tm, "%FT%TZ");
+        std::string timestamp_fail = ss.str();
         std::this_thread::sleep_for(std::chrono::milliseconds(data_interval)); // Aguarda 1 intervalo
 
         m.lock(); // Bloqueia o mutex para acessar actual_timestamps
@@ -102,15 +108,17 @@ void monitor_sensor_inactivity(std::string sensorId, int data_interval, std::str
             data_received = false;
             count++;
             //std::string seconds=convert_to_epoch(current_timestamp) + count*(data_interval/1000);
-            if (count == 10) {
+            if (count >= 10) {
                 std::cout << "Não houve recebimento de dados da maquina"<<machineId << "do" << sensorId << " por 10 intervalos!" << std::endl;
-                post_metric(machineId, "alarm.inactivity."+sensorId, current_timestamp, 1);
-                count = 0;
+                post_metric(machineId, "alarm.inactivity."+sensorId, timestamp_fail, 1);
+                //count = 0;
+            }else{
+                post_metric(machineId, "alarm.inactivity."+sensorId, timestamp_fail, 0);
             }
         } else {
             data_received = true;
             std::cout << "Dados do maquina" << machineId <<"e sensor " << sensorId << " estão sendo recebidos." << std::endl;
-            post_metric(machineId, "alarm.inactivity."+sensorId, current_timestamp, 0);
+            post_metric(machineId, "alarm.inactivity."+sensorId, timestamp_fail, 0);
             count = 0;
         }
         // Atualiza o último timestamp
@@ -215,8 +223,9 @@ int main(int argc, char* argv[]) {
             std::string key = machine_id + sensor_id;
             actual_timestamps.insert_or_assign(key, timestamp);
            
-
+            //std::cout << timestamp<<std::endl;
             post_metric(machine_id, sensor_id, timestamp, value);
+            
             // Adicionar a nova leitura aos dados do sensor
             add_reading(key, value);
             double avg = calculate_average(key);
@@ -251,9 +260,7 @@ int main(int argc, char* argv[]) {
     }
 
     while (true) {
-        std::cout << actual_timestamps["sensor1"] << std::endl;
-
-        std::this_thread::sleep_for(std::chrono::seconds(1));
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
 
     return EXIT_SUCCESS;
