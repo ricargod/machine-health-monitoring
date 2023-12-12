@@ -32,7 +32,7 @@ void post_metric(const std::string& machine_id, const std::string& sensor_id, co
     //std::string path = machine_id + '.' + sensor_id;
     //std::string metric = path + " " + std::to_string(value) + " " + timestamp_str;
     std::string metric = machine_id + '.' + sensor_id;
-    std::cout << "valor"<< value <<std::endl;
+    //std::cout << "valor"<< value <<std::endl;
     std::time_t epoch = convert_to_epoch(timestamp_str);
     std::string message = metric + " " + std::to_string(value) + " " + std::to_string(epoch) + "\n";
     io_context io;
@@ -55,7 +55,7 @@ void post_metric(const std::string& machine_id, const std::string& sensor_id, co
         if (error) {
             std::cerr << "Erro ao enviar mensagem: " << error.message() << std::endl;
         } else {
-            std::cout << "Mensagem enviada com sucesso!" << std::endl;
+        //    std::cout << "Mensagem enviada com sucesso!" << std::endl;
         }
     } catch (const std::exception& e) {
         std::cerr << "Erro ao conectar: " << e.what() << std::endl;
@@ -77,7 +77,7 @@ mqtt::async_client client(BROKER_ADDRESS, clientId);
 
 //Guarda o valor do timestamp da ultima mensagem recebida de cada sensor
 //encadeado como: {id_do_sensor: ultimo_timestamp}
-std::map<std::string, std::string> actual_timestamps;
+std::map<std::string, std::string> actual_timestamps={{"inicial","true"}};
 
 struct SensorReadings {
     std::vector<double> readings;
@@ -88,29 +88,29 @@ std::map<std::string, SensorReadings> sensorData;
 void monitor_sensor_inactivity(std::string sensorId, int data_interval, std::string machineId) {
     bool data_received = true;
     int count = 0; // Contador de tempo sem dados
-
-    auto last_timestamp = actual_timestamps[sensorId]; // Obtém o timestamp inicial
+    std::string key = machineId+sensorId; 
+    auto last_timestamp = actual_timestamps[key]; // Obtém o timestamp inicial
 
     while (true) {
         std::this_thread::sleep_for(std::chrono::milliseconds(data_interval)); // Aguarda 1 intervalo
 
         m.lock(); // Bloqueia o mutex para acessar actual_timestamps
-        auto current_timestamp = actual_timestamps[sensorId];
+        auto current_timestamp = actual_timestamps[key];
         m.unlock(); // Libera o mutex
-
+        
         if (current_timestamp == last_timestamp) {
             data_received = false;
             count++;
-
+            //std::string seconds=convert_to_epoch(current_timestamp) + count*(data_interval/1000);
             if (count == 10) {
-                std::cout << "Não houve recebimento de dados do "<<sensorId << " por 10 intervalos!" << std::endl;
-                post_metric(machineId, "alarm.inactivity", current_timestamp, 1);
+                std::cout << "Não houve recebimento de dados da maquina"<<machineId << "do" << sensorId << " por 10 intervalos!" << std::endl;
+                post_metric(machineId, "alarm.inactivity."+sensorId, current_timestamp, 1);
                 count = 0;
             }
         } else {
             data_received = true;
-            std::cout << "Dados do sensor " << sensorId << " estão sendo recebidos." << std::endl;
-            post_metric(machineId, "alarm.inactivity", current_timestamp, 0);
+            std::cout << "Dados do maquina" << machineId <<"e sensor " << sensorId << " estão sendo recebidos." << std::endl;
+            post_metric(machineId, "alarm.inactivity."+sensorId, current_timestamp, 0);
             count = 0;
         }
         // Atualiza o último timestamp
@@ -119,13 +119,13 @@ void monitor_sensor_inactivity(std::string sensorId, int data_interval, std::str
     }
 }
 
-double calculate_average(const std::string& sensor_id) {
+double calculate_average(const std::string& key) {
     double sum = 0.0;
     int count = 0;
 
     // Verifica se há leituras armazenadas para o sensor
-    if (sensorData.find(sensor_id) != sensorData.end()) {
-        auto& readings = sensorData[sensor_id].readings;
+    if (sensorData.find(key) != sensorData.end()) {
+        auto& readings = sensorData[key].readings;
 
         // Calcula a média das últimas 10 leituras, se houverem
         int start_idx = readings.size() > 10 ? readings.size() - 10 : 0;
@@ -137,10 +137,10 @@ double calculate_average(const std::string& sensor_id) {
 
     return count > 0 ? sum / count : 0.0;
 }
-void add_reading(const std::string& sensor_id, double value) {
+void add_reading(const std::string& key, double value) {
     // Verifica se há leituras armazenadas para o sensor
-    if (sensorData.find(sensor_id) != sensorData.end()) {
-        auto& readings = sensorData[sensor_id].readings;
+    if (sensorData.find(key) != sensorData.end()) {
+        auto& readings = sensorData[key].readings;
 
         // Mantém apenas as últimas 10 leituras
         if (readings.size() >= 10) {
@@ -153,7 +153,7 @@ void add_reading(const std::string& sensor_id, double value) {
         // Se não houver leituras armazenadas, cria uma entrada para o sensor
         SensorReadings sr;
         sr.readings.push_back(value);
-        sensorData.insert({ sensor_id, sr });
+        sensorData.insert({ key, sr });
     }
 }
 
@@ -173,32 +173,33 @@ int main(int argc, char* argv[]) {
 
             if (msg->get_topic() == "/sensor_monitors") {
                 
-                
-                std::string new_machine_id = j["machine_id"];
-                
-                std::string new_sensor1_id = j["sensors"][0]["sensor_id"];
-                std::string new_sensor1_data_type = j["sensors"][0]["data_type"];
-                int new_sensor1_interval = j["sensors"][0]["data_interval"];
-
-                std::string new_sensor2_id = j["sensors"][1]["sensor_id"];
-                std::string new_sensor2_data_type = j["sensors"][1]["data_type"];
-                int new_sensor2_interval = j["sensors"][1]["data_interval"];
-
-                std::string topic1 = "/sensor_monitors/" + new_machine_id + "/" + new_sensor1_id;
-                std::string topic2 = "/sensor_monitors/" + new_machine_id + "/" + new_sensor2_id;
-
-                client.subscribe(topic1, QOS);
-                client.subscribe(topic2, QOS);
-
-                actual_timestamps.insert_or_assign(new_sensor1_id, "0T00:00:00");
-                actual_timestamps.insert_or_assign(new_sensor2_id, "0");
-
-                std::thread m_i_1(monitor_sensor_inactivity, new_sensor1_id , new_sensor1_interval, new_machine_id);
-                m_i_1.detach();
-                std::thread m_i_2(monitor_sensor_inactivity, new_sensor2_id, new_sensor2_interval, new_machine_id);
-                m_i_2.detach();
+                if (actual_timestamps["inicial"]!="false"){
+                    std::string new_machine_id = j["machine_id"];
             
+                    std::string new_sensor1_id = j["sensors"][0]["sensor_id"];
+                    std::string new_sensor1_data_type = j["sensors"][0]["data_type"];
+                    int new_sensor1_interval = j["sensors"][0]["data_interval"];
 
+                    std::string new_sensor2_id = j["sensors"][1]["sensor_id"];
+                    std::string new_sensor2_data_type = j["sensors"][1]["data_type"];
+                    int new_sensor2_interval = j["sensors"][1]["data_interval"];
+
+                    std::string topic1 = "/sensor_monitors/" + new_machine_id + "/" + new_sensor1_id;
+                    std::string topic2 = "/sensor_monitors/" + new_machine_id + "/" + new_sensor2_id;
+
+                    client.subscribe(topic1, QOS);
+                    client.subscribe(topic2, QOS);
+                    actual_timestamps.insert_or_assign("inicial","false");
+
+                    std::string chave1 = new_machine_id + new_sensor1_id;
+                    std::string chave2 = new_machine_id + new_sensor2_id;
+                    actual_timestamps.insert_or_assign(chave1, "0T00:00:00");
+                    actual_timestamps.insert_or_assign(chave2, "0T00:00:00");
+                    std::thread m_i_1(monitor_sensor_inactivity, new_sensor1_id , new_sensor1_interval, new_machine_id);
+                    m_i_1.detach();
+                    std::thread m_i_2(monitor_sensor_inactivity, new_sensor2_id, new_sensor2_interval, new_machine_id);
+                    m_i_2.detach();
+                }
             }
 
             else {
@@ -211,17 +212,17 @@ int main(int argc, char* argv[]) {
             std::string timestamp = j["timestamp"];
             double value = j["value"];
     
-            
-            actual_timestamps.insert_or_assign(sensor_id, timestamp);
+            std::string key = machine_id + sensor_id;
+            actual_timestamps.insert_or_assign(key, timestamp);
            
 
             post_metric(machine_id, sensor_id, timestamp, value);
             // Adicionar a nova leitura aos dados do sensor
-            add_reading(sensor_id, value);
-            double avg = calculate_average(sensor_id);
+            add_reading(key, value);
+            double avg = calculate_average(key);
             if (sensor_id=="sensor1") {
                 if(avg > 2.7){
-                    std::cout << "A média das leituras para o sensor " << sensor_id << " é maior que 2.7!" << std::endl;
+                    std::cout << "A média das leituras para o " << sensor_id << "da maquina "<< machine_id << " é maior que 2.7!" << std::endl;
                     post_metric(machine_id, "alarm.high_frequency", timestamp, 1);
                 }else{
                     post_metric(machine_id, "alarm.high_frequency", timestamp, 0);

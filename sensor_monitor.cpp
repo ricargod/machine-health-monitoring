@@ -108,15 +108,22 @@ void read_and_publish_sensor(std::string machineId, std::string sensorId, int da
     std::this_thread::sleep_for(std::chrono::milliseconds(data_interval));
     } 
 }
-
+void publish_periodic(mqtt::message msg_inicial, int periodic){
+    while(true){
+        client.publish(msg_inicial);
+        std::cout << "mensagem inicial enviada"<<std::endl;
+        std::this_thread::sleep_for(std::chrono::milliseconds(periodic));
+    }
+}
 int main(int argc, char* argv[]) {
-    if (argc < 3) {
-        std::cerr << "Uso: " << argv[0] << " <data_interval1> <data_interval2>" << std::endl;
+    if (argc < 4) {
+        std::cerr << "Uso: " << argv[0] << " <data_interval1> <data_interval2> <periodic>" << std::endl;
         return EXIT_FAILURE;
     }
-
+    
     int data_interval1 = std::atoi(argv[1]);
     int data_interval2 = std::atoi(argv[2]);
+    int periodic = std::atoi(argv[3]);
     // Connect to the MQTT broker.
     mqtt::connect_options connOpts;
     connOpts.set_keep_alive_interval(20);
@@ -154,7 +161,8 @@ int main(int argc, char* argv[]) {
     std::string topic_inicial = "/sensor_monitors";
     mqtt::message msg_inicial(topic_inicial, j_inicial.dump(), QOS, false);
     //std::clog << "message published - topic: " << topic_inicial << " - message: " << j_inicial.dump() << std::endl;
-    client.publish(msg_inicial);
+    std::thread t_periodic(publish_periodic, msg_inicial, periodic);
+    t_periodic.detach();
 
     
     std::thread t_sensor1(read_and_publish_sensor, machineId, sensor_id1, data_interval1);
