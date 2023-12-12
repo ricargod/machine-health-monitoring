@@ -104,13 +104,13 @@ void monitor_sensor_inactivity(std::string sensorId, int data_interval, std::str
 
             if (count == 10) {
                 std::cout << "Não houve recebimento de dados do "<<sensorId << " por 10 intervalos!" << std::endl;
-                post_metric(machineId, "alarm.alarm-type", current_timestamp, 1);
+                post_metric(machineId, "alarm.inactivity", current_timestamp, 1);
                 count = 0;
             }
         } else {
             data_received = true;
             std::cout << "Dados do sensor " << sensorId << " estão sendo recebidos." << std::endl;
-            post_metric(machineId, "alarm.alarm-type", current_timestamp, 0);
+            post_metric(machineId, "alarm.inactivity", current_timestamp, 0);
             count = 0;
         }
         // Atualiza o último timestamp
@@ -219,9 +219,13 @@ int main(int argc, char* argv[]) {
             // Adicionar a nova leitura aos dados do sensor
             add_reading(sensor_id, value);
             double avg = calculate_average(sensor_id);
-            if (sensor_id=="sensor1" && avg > 5.0) {
-                std::cout << "A média das leituras para o sensor " << sensor_id << " é maior que 5!" << std::endl;
-                // ENVIAR ALARME
+            if (sensor_id=="sensor1") {
+                if(avg > 2.7){
+                    std::cout << "A média das leituras para o sensor " << sensor_id << " é maior que 2.7!" << std::endl;
+                    post_metric(machine_id, "alarm.high_frequency", timestamp, 1);
+                }else{
+                    post_metric(machine_id, "alarm.high_frequency", timestamp, 0);
+                }
             }
             }
         }
